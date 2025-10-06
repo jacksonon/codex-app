@@ -20,6 +20,7 @@ type ChatMessage = {
   variant?: MessageVariant;
   status?: "streaming" | "done" | "error";
   commandOutput?: string;
+  sequence: number;
 };
 
 const initialStatus: CodexSessionStatus = { state: "idle" };
@@ -34,6 +35,7 @@ export function App() {
 
   const messageMapRef = useRef<Map<string, string>>(new Map());
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const sequenceRef = useRef(0);
 
   useEffect(() => {
     window.codex
@@ -55,30 +57,48 @@ export function App() {
     }
   }, [messages]);
 
-  const appendSystemMessage = useCallback((variant: MessageVariant, content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
+  const nextSequence = useCallback(() => {
+    const current = sequenceRef.current;
+    sequenceRef.current += 1;
+    return current;
+  }, []);
+
+  const addMessage = useCallback(
+    (message: Omit<ChatMessage, "sequence">) => {
+      const sequence = nextSequence();
+      setMessages((prev) => {
+        const next = [...prev, { ...message, sequence }];
+        next.sort((a, b) => a.sequence - b.sequence);
+        return next;
+      });
+    },
+    [nextSequence],
+  );
+
+  const appendSystemMessage = useCallback(
+    (variant: MessageVariant, content: string) => {
+      addMessage({
         id: `system-${Date.now()}`,
         role: "system",
         content,
         variant,
         status: variant === "error" ? "error" : "done",
-      },
-    ]);
-  }, []);
+      });
+    },
+    [addMessage],
+  );
 
-  const appendUserMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
+  const appendUserMessage = useCallback(
+    (content: string) => {
+      addMessage({
         id: `user-${Date.now()}`,
         role: "user",
         content,
         status: "done",
-      },
-    ]);
-  }, []);
+      });
+    },
+    [addMessage],
+  );
 
   const handleSelectWorkspace = useCallback(async () => {
     try {
@@ -89,6 +109,7 @@ export function App() {
         setUsage(null);
         setMessages([]);
         messageMapRef.current.clear();
+        sequenceRef.current = 0;
       }
     } catch (error) {
       console.error("选择工作目录失败", error);
@@ -106,32 +127,32 @@ export function App() {
     }
     const messageId = `assistant-${item.id}`;
     messageMapRef.current.set(item.id, messageId);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: messageId,
-        role: "assistant",
-        content: item.text ?? "",
-        status: "streaming",
-      },
-    ]);
+    addMessage({
+      id: messageId,
+      role: "assistant",
+      content: item.text ?? "",
+      status: "streaming",
+    });
     return messageId;
-  }, []);
+  }, [addMessage]);
 
-  const updateAssistantMessage = useCallback((item: AgentMessageItem, completed = false) => {
-    const messageId = ensureAssistantMessage(item);
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId
-          ? {
-              ...msg,
-              content: item.text,
-              status: completed ? "done" : "streaming",
-            }
-          : msg,
-      ),
-    );
-  }, [ensureAssistantMessage]);
+  const updateAssistantMessage = useCallback(
+    (item: AgentMessageItem, completed = false) => {
+      const messageId = ensureAssistantMessage(item);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                content: item.text,
+                status: completed ? "done" : "streaming",
+              }
+            : msg,
+        ),
+      );
+    },
+    [ensureAssistantMessage],
+  );
 
   const ensureReasoningMessage = useCallback((item: ReasoningItem) => {
     const existingId = messageMapRef.current.get(item.id);
@@ -140,18 +161,15 @@ export function App() {
     }
     const messageId = `reasoning-${item.id}`;
     messageMapRef.current.set(item.id, messageId);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: messageId,
-        role: "assistant",
-        content: item.text,
-        variant: "reasoning",
-        status: "streaming",
-      },
-    ]);
+    addMessage({
+      id: messageId,
+      role: "assistant",
+      content: item.text,
+      variant: "reasoning",
+      status: "streaming",
+    });
     return messageId;
-  }, []);
+  }, [addMessage]);
 
   const updateReasoningMessage = useCallback((item: ReasoningItem, completed = false) => {
     const messageId = ensureReasoningMessage(item);
@@ -173,17 +191,14 @@ export function App() {
     if (!existingId) {
       const messageId = `command-${item.id}`;
       messageMapRef.current.set(item.id, messageId);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: messageId,
-          role: "system",
-          content: item.command,
-          variant: "command",
-          status: item.status === "completed" ? "done" : "streaming",
-          commandOutput: item.aggregated_output ?? "",
-        },
-      ]);
+      addMessage({
+        id: messageId,
+        role: "system",
+        content: item.command,
+        variant: "command",
+        status: item.status === "completed" ? "done" : "streaming",
+        commandOutput: item.aggregated_output ?? "",
+      });
       return;
     }
     setMessages((prev) =>
@@ -197,10 +212,13 @@ export function App() {
           : msg,
       ),
     );
-  }, []);
+  }, [addMessage]);
 
   const handleThreadEvent = useCallback((threadEvent: ThreadEvent) => {
-    if (threadEvent.type === "item.started") {
+    if (threadEvent.type === "turn.started") {
+      messageMapRef.current.clear();
+      setUsage(null);
+    } else if (threadEvent.type === "item.started") {
       const item = threadEvent.item;
       if (item.type === "agent_message") {
         ensureAssistantMessage(item);
@@ -227,8 +245,6 @@ export function App() {
       } else if (item.type === "command_execution") {
         handleCommandItem({ ...item, status: "completed" });
       }
-    } else if (threadEvent.type === "turn.started") {
-      setUsage(null);
     } else if (threadEvent.type === "turn.completed") {
       setUsage(threadEvent.usage);
     } else if (threadEvent.type === "turn.failed") {

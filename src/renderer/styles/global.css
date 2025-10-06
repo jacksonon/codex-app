@@ -78,6 +78,7 @@ html {
   margin: 0;
   padding: 0;
   height: 100%;
+  overflow: hidden;
   background: radial-gradient(circle at top left, var(--gradient-top), transparent 60%),
     radial-gradient(circle at bottom right, var(--gradient-bottom), transparent 55%),
     var(--app-bg);
@@ -90,8 +91,9 @@ body {
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
+  width: 100%;
 }
 
 .app-shell {
@@ -100,6 +102,9 @@ body {
   gap: 24px;
   width: 100%;
   padding: 32px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .top-bar {
@@ -161,6 +166,8 @@ body {
   background: var(--panel-bg);
   backdrop-filter: blur(12px);
   transition: border 0.3s ease;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-wrapper--active {
@@ -183,6 +190,7 @@ body {
   flex-direction: column;
   gap: 18px;
   padding-right: 6px;
+  min-height: 0;
 }
 
 .chat-scroll::-webkit-scrollbar {
