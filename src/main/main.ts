@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import type { BrowserWindowConstructorOptions } from "electron";
 import path from "node:path";
 import { CodexSession, CodexStreamEvent } from "./codexSession";
 
@@ -8,7 +9,7 @@ let mainWindow: BrowserWindow | null = null;
 const session = new CodexSession();
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const windowOptions: BrowserWindowConstructorOptions = {
     width: 1100,
     height: 720,
     minWidth: 960,
@@ -20,7 +21,21 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-  });
+  };
+
+  if (process.platform === "darwin") {
+    windowOptions.fullscreenable = false;
+    windowOptions.alwaysOnTop = true;
+    windowOptions.visibleOnAllWorkspaces = true;
+    windowOptions.vibrancy = "sidebar";
+  }
+
+  mainWindow = new BrowserWindow(windowOptions);
+
+  if (process.platform === "darwin") {
+    mainWindow.setAlwaysOnTop(true, "floating");
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
 
   if (isDev) {
     void mainWindow.loadURL("http://localhost:5173");
